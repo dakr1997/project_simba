@@ -442,6 +442,7 @@ namespace Core.UI.Lobby
                     TextMeshProUGUI statusText = entry.transform.Find("StatusText")?.GetComponent<TextMeshProUGUI>();
                     if (statusText != null)
                     {
+                        Debug.Log($"[LobbyUI.cs]Updating status for player {clientId} to {(isReady ? "Ready" : "Not Ready")}");
                         statusText.text = isReady ? "Ready" : "Not Ready";
                         statusText.color = isReady ? Color.green : Color.red;
                     }
@@ -509,7 +510,7 @@ namespace Core.UI.Lobby
             Debug.Log($"[LobbyUI] OnClientConnected: Client connected: {clientId}");
 
             // If this is the local client
-            if (clientId == NetworkManager.Singleton.LocalClientId)
+            if (clientId == NetworkManager.Singleton.LocalClientId && !NetworkManager.Singleton.IsServer && !NetworkManager.Singleton.IsHost)
             {
                 Debug.Log("Local client connected");
                 _isConnected = true;
@@ -523,14 +524,9 @@ namespace Core.UI.Lobby
                     NetworkEventManager.Instance.RegisterPlayerServerRpc(clientId, _localAccountData.AccountName);
                     
                     // Send account data with perks to server
-                    var accountNetworkData = new AccountNetworkData(_localAccountData);
+                    var accountNetworkData = new AccountNetworkData(_localAccountData.UniqueID, _localAccountData);
                     
-                    if (NetworkManager.Singleton.IsServer || NetworkManager.Singleton.IsHost)
-                    {
-                        // If we're the host, register directly
-                        GameManager.Instance.RegisterAccountData(clientId, accountNetworkData);
-                    }
-                    else
+                    if (NetworkManager.Singleton.IsClient)
                     {
                         // If we're a client, send to server via RPC
                         NetworkEventManager.Instance.SendAccountDataServerRpc(clientId, accountNetworkData);

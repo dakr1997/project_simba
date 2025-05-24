@@ -22,6 +22,7 @@ namespace Core.AccountManagement
         {
             Instance = this;
             DontDestroyOnLoad(gameObject);
+            Debug.Log("[AccountManager] Initialized as singleton instance");
         }
 
         void Start()
@@ -54,10 +55,8 @@ namespace Core.AccountManagement
 
         public void CreateAccount(string AccountName)
         {
-            // Generate unique ID
             uniqueID = Guid.NewGuid().ToString();
 
-            // Create new player data
             currentAccountData = new AccountData
             {
                 UniqueID = uniqueID,
@@ -66,17 +65,17 @@ namespace Core.AccountManagement
                 Currency = 0,
             };
 
-            // Initialize perks (this ensures the Upgrades dictionary is properly set up)
             currentAccountData.SavePerks();
 
-            Debug.Log($"Creating account for {AccountName} with ID: {uniqueID}");
-            // Save to PlayerPrefs
+            // Subscribe AFTER currentAccountData assigned
+            currentAccountData.OnAccountDataChanged += SaveAccount;
+
             SaveAccount();
 
-            // Switch to main menu
             accountCreationPanel.SetActive(false);
             mainMenuPanel.SetActive(true);
         }
+
 
         void LoadAccount()
         {
@@ -88,8 +87,11 @@ namespace Core.AccountManagement
                 Upgrades = LoadUpgrades()
             };
 
-            // Go straight to main menu
-            Debug.Log($"Loaded account for {currentAccountData.AccountName} with ID: {uniqueID}");
+            currentAccountData.Perks.FromDictionary(currentAccountData.Upgrades);
+
+            // Subscribe AFTER currentAccountData assigned
+            currentAccountData.OnAccountDataChanged += SaveAccount;
+
             accountCreationPanel.SetActive(false);
             mainMenuPanel.SetActive(true);
             playButton.interactable = true;
@@ -97,7 +99,9 @@ namespace Core.AccountManagement
 
         void SaveAccount()
         {
-            // IMPORTANT: Save perks before saving to PlayerPrefs
+            Debug.Log($"Saving account for {currentAccountData.AccountName} with ID: {uniqueID}");
+
+            // Sync perks data back to Upgrades dictionary before saving
             currentAccountData.SavePerks();
 
             PlayerPrefs.SetString("UniqueID", uniqueID);
@@ -131,6 +135,7 @@ namespace Core.AccountManagement
 
         void SaveUpgrades(Dictionary<string, float> upgrades)
         {
+            Debug.Log("[AccountManager] Saving upgrades to PlayerPrefs");
             List<string> pairs = new List<string>();
             foreach (var upgrade in upgrades)
             {
