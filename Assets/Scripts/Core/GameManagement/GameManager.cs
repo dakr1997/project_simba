@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
+using Core.AccountManagement;
 
 namespace Core.GameManagement
 {
@@ -28,6 +29,11 @@ namespace Core.GameManagement
                 return _instance;
             }
         }
+        #endregion
+
+        #region Account Data Storage
+        [Header("Account Data Storage")]
+        private Dictionary<ulong, AccountNetworkData> _playerAccountData = new Dictionary<ulong, AccountNetworkData>();
         #endregion
 
         #region Scene Names
@@ -129,7 +135,75 @@ namespace Core.GameManagement
                 _playerSessionData[clientId].PlayerData = playerData;
             }
 
-            Debug.Log($"[GameManager.cs]Registered player data for client {clientId}: {playerData.PlayerName}, Level {playerData.AccountLevel}, Currency {playerData.Currency}");
+            Debug.Log($"[GameManager] Registered player data for client {clientId}: {playerData.PlayerName}, Level {playerData.AccountLevel}, Currency {playerData.Currency}");
+        }
+
+        // Register the network-optimized account data (with perks)
+        public void RegisterAccountData(ulong clientId, AccountNetworkData accountData)
+        {
+            // Store the account network data
+            _playerAccountData[clientId] = accountData;
+            
+            // Also create/update PlayerData for compatibility with existing systems
+            var playerData = new PlayerData
+            {
+                PlayerName = accountData.accountName,  // Note: lowercase 'a' in accountName
+                AccountLevel = accountData.accountLevel,
+                Currency = 0,  // AccountNetworkData doesn't include currency
+                Upgrades = new Dictionary<string, float>()
+            };
+            
+            // Convert perk levels to upgrades dictionary for backward compatibility
+            playerData.Upgrades[AccountPerks.HP_PERK] = accountData.hpPerkLevel;
+            playerData.Upgrades[AccountPerks.DAMAGE_PERK] = accountData.damagePerkLevel;
+            playerData.Upgrades[AccountPerks.GOLD_PERK] = accountData.goldPerkLevel;
+            playerData.Upgrades[AccountPerks.SPEED_PERK] = accountData.speedPerkLevel;
+            playerData.Upgrades[AccountPerks.EXP_PERK] = accountData.expPerkLevel;
+
+            // Register the player data
+            RegisterPlayerData(clientId, playerData);
+            
+            Debug.Log($"[GameManager] Registered account data for client {clientId}: {accountData.accountName}, " +
+                      $"Level {accountData.accountLevel}, Perks: HP={accountData.hpPerkLevel}, " +
+                      $"DMG={accountData.damagePerkLevel}, GOLD={accountData.goldPerkLevel}, " +
+                      $"SPD={accountData.speedPerkLevel}, EXP={accountData.expPerkLevel}");
+        }
+
+        // Get the account data for a specific player
+        public AccountNetworkData GetPlayerAccountData(ulong clientId)
+        {
+            return _playerAccountData.ContainsKey(clientId) ? _playerAccountData[clientId] : null;
+        }
+
+        // Helper methods for quick access to multipliers
+        public float GetPlayerHpMultiplier(ulong clientId)
+        {
+            var data = GetPlayerAccountData(clientId);
+            return data?.GetHpMultiplier() ?? 1f;
+        }
+
+        public float GetPlayerDamageMultiplier(ulong clientId)
+        {
+            var data = GetPlayerAccountData(clientId);
+            return data?.GetDamageMultiplier() ?? 1f;
+        }
+
+        public float GetPlayerGoldMultiplier(ulong clientId)
+        {
+            var data = GetPlayerAccountData(clientId);
+            return data?.GetGoldMultiplier() ?? 1f;
+        }
+
+        public float GetPlayerExpMultiplier(ulong clientId)
+        {
+            var data = GetPlayerAccountData(clientId);
+            return data?.GetExpMultiplier() ?? 1f;
+        }
+
+        public float GetPlayerSpeedMultiplier(ulong clientId)
+        {
+            var data = GetPlayerAccountData(clientId);
+            return data?.GetSpeedMultiplier() ?? 1f;
         }
 
         public PlayerSessionData GetPlayerSessionData(ulong clientId)
@@ -154,6 +228,24 @@ namespace Core.GameManagement
                 // Update persistent player data with rewards
                 _playerSessionData[clientId].PlayerData.AccountLevel += rewards.ExperienceGained / 100; // Example conversion
                 _playerSessionData[clientId].PlayerData.Currency += rewards.CurrencyEarned;
+                
+                // Apply exp multiplier if applicable
+                float expMultiplier = GetPlayerExpMultiplier(clientId);
+                if (expMultiplier > 1f)
+                {
+                    int bonusExp = Mathf.RoundToInt(rewards.ExperienceGained * (expMultiplier - 1f));
+                    _playerSessionData[clientId].PlayerData.AccountLevel += bonusExp / 100;
+                    Debug.Log($"[GameManager] Applied EXP multiplier {expMultiplier}x for client {clientId}, bonus EXP: {bonusExp}");
+                }
+                
+                // Apply gold multiplier if applicable
+                float goldMultiplier = GetPlayerGoldMultiplier(clientId);
+                if (goldMultiplier > 1f)
+                {
+                    int bonusGold = Mathf.RoundToInt(rewards.CurrencyEarned * (goldMultiplier - 1f));
+                    _playerSessionData[clientId].PlayerData.Currency += bonusGold;
+                    Debug.Log($"[GameManager] Applied Gold multiplier {goldMultiplier}x for client {clientId}, bonus Gold: {bonusGold}");
+                }
             }
         }
         #endregion
@@ -212,7 +304,7 @@ namespace Core.GameManagement
 
         private void OnSceneLoaded(Scene scene, LoadSceneMode mode)
         {
-            Debug.Log($"[GameManager.cs]Scene loaded: {scene.name}");
+            Debug.Log($"[GameManager] Scene loaded: {scene.name}");
             
             // Update game state based on loaded scene
             if (scene.name == _menuSceneName)
@@ -271,7 +363,7 @@ namespace Core.GameManagement
                 Seed = UnityEngine.Random.Range(0, int.MaxValue)
             };
 
-            Debug.Log($"[GameManager.cs]Started new session: {_sessionData.SessionId}");
+            Debug.Log($"[GameManager] Started new session: {_sessionData.SessionId}");
         }
 
         public void EndSession()
@@ -279,7 +371,7 @@ namespace Core.GameManagement
             _sessionData.EndTime = DateTime.Now;
             _sessionData.Duration = _sessionData.EndTime - _sessionData.StartTime;
             
-            Debug.Log($"[GameManager.cs]Session ended. Duration: {_sessionData.Duration}");
+            Debug.Log($"[GameManager] Session ended. Duration: {_sessionData.Duration}");
         }
 
         private void PrepareFullReset()
@@ -296,6 +388,9 @@ namespace Core.GameManagement
                 playerData.PerformanceData = new PerformanceData();
                 playerData.RewardData = new RewardData();
             }
+
+            // Clear account data cache (will be re-sent on next connection)
+            _playerAccountData.Clear();
 
             OnGameReset?.Invoke();
         }
@@ -430,8 +525,6 @@ namespace Core.GameManagement
         public string SelectedCharacter;
         public List<string> UnlockedCharacters = new List<string>();
         public Dictionary<string, int> Inventory = new Dictionary<string, int>();
-        
-        // ADD THIS LINE:
         public Dictionary<string, float> Upgrades = new Dictionary<string, float>();
     }
 

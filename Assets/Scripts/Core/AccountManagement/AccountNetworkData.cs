@@ -22,11 +22,11 @@ namespace Core.AccountManagement
         public AccountNetworkData(string id, AccountData accountData)
         {
             uniqueID = id;
-            playerName = accountData.AccountName;
+            accountName = accountData.AccountName;
             accountLevel = accountData.AccountLevel;
             
             // Get perk levels
-            var perks = accountDataPerks;
+            var perks = accountData.Perks;
             hpPerkLevel = perks.GetPerkLevel(AccountPerks.HP_PERK);
             damagePerkLevel = perks.GetPerkLevel(AccountPerks.DAMAGE_PERK);
             goldPerkLevel = perks.GetPerkLevel(AccountPerks.GOLD_PERK);

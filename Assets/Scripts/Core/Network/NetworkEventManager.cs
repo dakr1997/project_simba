@@ -2,6 +2,8 @@ using UnityEngine;
 using Unity.Netcode;
 using System;
 using System.Collections.Generic;
+using Core.GameManagement;
+using Core.AccountManagement;
 
 namespace Core.Network
 {
@@ -84,6 +86,23 @@ namespace Core.Network
                         });
                     }
                 }
+            }
+        }
+
+
+        [ServerRpc(RequireOwnership = false)]
+        public void SendAccountDataServerRpc(ulong clientId, AccountNetworkData accountData)
+        {
+            Debug.Log($"[NetworkEventManager] Server received account data from client {clientId}");
+            
+            // Store the account data in GameManager (server-side only)
+            if (GameManager.Instance != null)
+            {
+                GameManager.Instance.RegisterAccountData(clientId, accountData);
+            }
+            else
+            {
+                Debug.LogError("[NetworkEventManager] GameManager.Instance is null!");
             }
         }
 

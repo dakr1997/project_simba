@@ -506,7 +506,7 @@ namespace Core.UI.Lobby
 
         private void OnClientConnected(ulong clientId)
         {
-            Debug.Log($"[LobbyUI.cs]OnClientConnected: Client connected: {clientId}");
+            Debug.Log($"[LobbyUI] OnClientConnected: Client connected: {clientId}");
 
             // If this is the local client
             if (clientId == NetworkManager.Singleton.LocalClientId)
@@ -517,13 +517,24 @@ namespace Core.UI.Lobby
                 // Register with the server using account data
                 if (NetworkEventManager.Instance != null && _localAccountData != null)
                 {
-                    Debug.Log($"[LobbyUI.cs]Registering player with server: {clientId} - {_localAccountData.AccountName}");
+                    Debug.Log($"[LobbyUI] Registering player with server: {clientId} - {_localAccountData.AccountName}");
 
-                    // Register player name for lobby display
+                    // Register player name for lobby display (visible to all)
                     NetworkEventManager.Instance.RegisterPlayerServerRpc(clientId, _localAccountData.AccountName);
                     
-                    // Register full player data with GameManager for game use
-                    GameManager.Instance.RegisterAccountData(clientId, _localAccountData);
+                    // Send account data with perks to server
+                    var accountNetworkData = new AccountNetworkData(_localAccountData);
+                    
+                    if (NetworkManager.Singleton.IsServer || NetworkManager.Singleton.IsHost)
+                    {
+                        // If we're the host, register directly
+                        GameManager.Instance.RegisterAccountData(clientId, accountNetworkData);
+                    }
+                    else
+                    {
+                        // If we're a client, send to server via RPC
+                        NetworkEventManager.Instance.SendAccountDataServerRpc(clientId, accountNetworkData);
+                    }
                 }
                 else
                 {

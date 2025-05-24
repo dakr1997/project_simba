@@ -159,7 +159,9 @@ TextureImporter:
     secondaryTextures: []
     spriteCustomMetadata:
       entries: []
-    nameFileIdTable: {}
+    nameFileIdTable:
+      UI_ATK_Fighter_0: -2344429420887312818
+      UI_ATK_Fighter_1: -8087348131862284156
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 
