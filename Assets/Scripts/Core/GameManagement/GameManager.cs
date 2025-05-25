@@ -5,6 +5,7 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
+using System.Linq;
 using Core.AccountManagement;
 
 namespace Core.GameManagement
@@ -30,7 +31,11 @@ namespace Core.GameManagement
             }
         }
         #endregion
+        #region Configuration
+        private bool _isServer = false;
+        public bool _isDedicatedServer = false;
 
+        #endregion
         #region Account Data Storage
         [Header("Account Data Storage")]
         private Dictionary<ulong, AccountNetworkData> _playerAccountData = new Dictionary<ulong, AccountNetworkData>();
@@ -41,6 +46,10 @@ namespace Core.GameManagement
         [SerializeField] private string _menuSceneName = "MenuScene";
         [SerializeField] private string _gameSceneName = "GameScene";
         [SerializeField] private string _rewardSceneName = "RewardScene";
+        #endregion
+
+        #region Game Settings
+        [SerializeField] private GameObject ConsoleLoggerPrefab;
         #endregion
 
         #region Game States
@@ -86,8 +95,16 @@ namespace Core.GameManagement
         #region Unity Lifecycle
         private void Awake()
         {
+            Debug.Log("[GameManager] Awake called");
+            string[] args = System.Environment.GetCommandLineArgs();
+            if (args.Any(arg => arg.Equals("-dedicatedserver", StringComparison.OrdinalIgnoreCase)))
+            {
+                Debug.Log("[GameManager] Starting as dedicated server");
+                _isDedicatedServer = true;
+            }
             if (_instance != null && _instance != this)
             {
+                Debug.LogWarning("[GameManager] Another instance already exists, destroying this one.");
                 Destroy(gameObject);
                 return;
             }
@@ -101,6 +118,8 @@ namespace Core.GameManagement
         private void Start()
         {
             SceneManager.sceneLoaded += OnSceneLoaded;
+            if (_isDedicatedServer)
+            { StartDedicatedServer(); }
         }
 
         private void OnDestroy()
@@ -113,8 +132,34 @@ namespace Core.GameManagement
         private void InitializeGameManager()
         {
             _sessionData = new GameSessionData();
-            Debug.Log("GameManager initialized");
+            Debug.Log($"[GameManager] Initialized. IsServer: {_isServer}, IsDedicatedServer: {_isDedicatedServer}");
         }
+
+        void StartDedicatedServer()
+        {
+            // Disable rendering
+            //if (ConsoleLoggerPrefab != null)
+            //{
+            //    Instantiate(ConsoleLoggerPrefab);
+            //}
+            Application.targetFrameRate = 10;  // Optional: reduce FPS
+            QualitySettings.SetQualityLevel(0, true);
+            Physics.autoSimulation = false; // Disable physics simulation for performance
+            Screen.SetResolution(1, 1, false);
+            
+            // Disable scripts not needed for server
+            Debug.Log("[GameManager] Starting dedicated server...");
+            //Camera.main.gameObject.SetActive(false);
+            foreach(var camera in FindObjectsOfType<Camera>())
+                camera.gameObject.SetActive(false);
+
+            AudioListener.pause = true;
+            AudioListener.volume = 0;
+
+            // Start your networking manager in server mode
+            NetworkManager.Singleton.StartServer();
+        }
+
         #endregion
 
         #region Account Data Management
@@ -253,9 +298,20 @@ namespace Core.GameManagement
         #region Scene Transitions
         public void TransitionToGame()
         {
-            if (NetworkManager.Singleton.IsServer || NetworkManager.Singleton.IsHost)
+             if (NetworkManager.Singleton.IsServer || NetworkManager.Singleton.IsHost)
             {
-                StartCoroutine(LoadSceneAsync(_gameSceneName));
+                // Skip UI animations on dedicated server
+                if (_isDedicatedServer)
+                {
+                    NetworkManager.Singleton.SceneManager.LoadScene(_gameSceneName, LoadSceneMode.Single);
+                    _currentGameState = GameState.InGame;
+                    _currentGameSceneState = GameSceneState.Building;
+                    OnGameStateChanged?.Invoke(_currentGameState);
+                }
+                else
+                {
+                    StartCoroutine(LoadSceneAsync(_gameSceneName));
+                }
             }
         }
 
@@ -315,14 +371,45 @@ namespace Core.GameManagement
             {
                 _currentGameState = GameState.InGame;
                 _currentGameSceneState = GameSceneState.Building;
+                
+                // On dedicated server, automatically start game logic
+                if (_isDedicatedServer && _isServer)
+                {
+                    StartCoroutine(AutoStartGameLogic());
+                }
             }
             else if (scene.name == _rewardSceneName)
             {
                 _currentGameState = GameState.Rewards;
+                
+                // On dedicated server, automatically return to lobby after rewards
+                if (_isDedicatedServer && _isServer)
+                {
+                    StartCoroutine(AutoReturnToLobby());
+                }
             }
 
             OnGameStateChanged?.Invoke(_currentGameState);
             OnSceneLoadCompleted?.Invoke(scene.name);
+        }
+
+        private IEnumerator AutoStartGameLogic()
+        {
+            yield return new WaitForSeconds(2f); // Wait for scene to fully initialize
+            
+            Debug.Log("[GameManager] Auto-starting game logic on dedicated server");
+            
+            // Transition from Building to Wave state
+            SetGameSceneState(GameSceneState.Wave);
+            
+            // You can add more automated game flow here
+        }
+        private IEnumerator AutoReturnToLobby()
+        {
+            yield return new WaitForSeconds(30f); // Show rewards for 30 seconds
+            
+            Debug.Log("[GameManager] Auto-returning to lobby on dedicated server");
+            TransitionToMenu(true);
         }
         #endregion
 
@@ -342,6 +429,60 @@ namespace Core.GameManagement
             if (NetworkManager.Singleton.IsServer)
             {
                 SyncGameSceneStateClientRpc(newState);
+                
+                // Handle server-specific state transitions
+                if (_isDedicatedServer)
+                {
+                    HandleServerStateTransition(newState);
+                }
+            }
+        }
+
+        private void HandleServerStateTransition(GameSceneState newState)
+        {
+            switch (newState)
+            {
+                case GameSceneState.Wave:
+                    Debug.Log("[GameManager] Server: Starting wave");
+                    // Add wave spawning logic here
+                    break;
+                    
+                case GameSceneState.BetweenWaves:
+                    Debug.Log("[GameManager] Server: Between waves");
+                    // Add logic to prepare next wave
+                    StartCoroutine(PrepareNextWave());
+                    break;
+                    
+                case GameSceneState.GameOver:
+                    Debug.Log("[GameManager] Server: Game over");
+                    // Transition to rewards after a delay
+                    StartCoroutine(TransitionToRewardsAfterDelay());
+                    break;
+            }
+        }
+
+        private IEnumerator PrepareNextWave()
+        {
+            yield return new WaitForSeconds(10f); // Wait between waves
+            
+            if (_currentGameSceneState == GameSceneState.BetweenWaves)
+            {
+                _sessionData.CurrentWave++;
+                SetGameSceneState(GameSceneState.Wave);
+            }
+        }
+
+        private IEnumerator TransitionToRewardsAfterDelay()
+        {
+            yield return new WaitForSeconds(5f);
+            
+            if (Core.Server.DedicatedServerManager.Instance != null)
+            {
+                Core.Server.DedicatedServerManager.Instance.TransitionToRewards();
+            }
+            else
+            {
+                TransitionToRewards();
             }
         }
 

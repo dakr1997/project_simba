@@ -1,6 +1,7 @@
 using UnityEngine;
 using System;
 using System.Collections.Generic;
+using Unity.Netcode;
 using Core.GameManagement; 
 
 namespace Core.AccountManagement
@@ -30,7 +31,7 @@ namespace Core.AccountManagement
             // Check if account exists
             uniqueID = PlayerPrefs.GetString("UniqueID", "");
 
-            if (string.IsNullOrEmpty(uniqueID))
+            if (string.IsNullOrEmpty(uniqueID) && !NetworkManager.Singleton.IsServer)
             {
                 // First time - show account creation
                 Debug.Log("No account found, showing account creation.");

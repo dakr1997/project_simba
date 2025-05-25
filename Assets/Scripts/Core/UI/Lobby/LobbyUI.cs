@@ -37,7 +37,6 @@ namespace Core.UI.Lobby
 
         [Header("Game Settings")]
         [SerializeField] private float _readyCountdownDuration = 5f;
-        [SerializeField] private string _gameSceneName = "GameScene";
 
         // Player tracking
         private Dictionary<ulong, PlayerInfo> _connectedPlayers = new Dictionary<ulong, PlayerInfo>();
